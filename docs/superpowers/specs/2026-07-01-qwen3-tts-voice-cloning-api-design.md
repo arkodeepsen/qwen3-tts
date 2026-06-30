@@ -88,6 +88,9 @@ Notes:
 - `ref_text` is the verbatim transcript of the reference clip (required for
   best-quality cloning).
 - `language` is one of the 10 supported languages or `"Auto"`.
+- `sample_rate` in all responses is the model's native output rate (the `sr`
+  returned by `qwen_tts`); `24000` in these examples is illustrative, not a
+  hardcoded assumption — the implementation echoes whatever the model returns.
 
 ### 4.2 `generate` (default action)
 Synthesize speech in a registered voice. Supports arbitrary-length `text`.
