@@ -40,6 +40,7 @@ def test_register_creates_profile(reg):
     assert out["voice_id"].startswith("client-narrator-")
     voices = r.list_voices()
     assert len(voices) == 1 and voices[0]["language"] == "English"
+    assert voices[0]["created_at"]  # ISO-8601 timestamp recorded at registration
 
 def test_load_prompt_uses_cache(reg):
     r, model = reg

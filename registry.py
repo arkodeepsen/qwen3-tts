@@ -17,6 +17,7 @@ import urllib.request
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import numpy as np
@@ -187,7 +188,8 @@ class VoiceRegistry:
             sf.write(os.path.join(tmp, "ref.wav"), wav, sr, format="WAV")
             torch.save([self._item_to_dict(it) for it in items], os.path.join(tmp, "prompt.pt"))
             meta = {"voice_id": voice_id, "name": name, "language": language,
-                    "ref_text": ref_text, "sample_rate": int(sr)}
+                    "ref_text": ref_text, "sample_rate": int(sr),
+                    "created_at": datetime.now(timezone.utc).isoformat()}
             with open(os.path.join(tmp, "meta.json"), "w", encoding="utf-8") as f:
                 json.dump(meta, f, ensure_ascii=False, indent=2)
             os.rename(tmp, os.path.join(self.root, voice_id))
@@ -204,7 +206,8 @@ class VoiceRegistry:
                 with open(meta_path, encoding="utf-8") as f:
                     m = json.load(f)
                 out.append({"voice_id": m["voice_id"], "name": m.get("name"),
-                            "language": m.get("language"), "sample_rate": m.get("sample_rate")})
+                            "language": m.get("language"), "sample_rate": m.get("sample_rate"),
+                            "created_at": m.get("created_at")})
         return out
 
     def delete(self, voice_id: str) -> bool:

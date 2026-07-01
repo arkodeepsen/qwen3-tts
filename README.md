@@ -157,8 +157,8 @@ Response:
 {
   "success": true,
   "voices": [
-    {"voice_id": "narrator-a1b2c3", "name": "narrator", "language": "Auto", "sample_rate": 24000},
-    {"voice_id": "assistant-9f8e7d", "name": "assistant", "language": "en", "sample_rate": 22050}
+    {"voice_id": "narrator-a1b2c3", "name": "narrator", "language": "Auto", "sample_rate": 24000, "created_at": "2026-07-01T12:00:00+00:00"},
+    {"voice_id": "assistant-9f8e7d", "name": "assistant", "language": "en", "sample_rate": 22050, "created_at": "2026-07-01T12:05:00+00:00"}
   ]
 }
 ```
