@@ -23,3 +23,16 @@ MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "1024"))
 # Reference audio is trimmed to this many seconds at registration — overly long
 # reference clips are a known trigger for the model never emitting EOS.
 REF_AUDIO_MAX_SEC = float(os.getenv("REF_AUDIO_MAX_SEC", "30"))
+
+# Optional S3-compatible object storage — lets generate return a URL instead of
+# base64, and powers the long-form merge flow (a single job can't return hours of
+# audio as base64). Works with Cloudflare R2, AWS S3, Backblaze B2, MinIO, RunPod
+# S3, etc. If unset, URL/merge features are simply disabled.
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", "")          # e.g. https://<acct>.r2.cloudflarestorage.com (blank for AWS)
+S3_BUCKET = os.getenv("S3_BUCKET", "")
+S3_ACCESS_KEY_ID = os.getenv("S3_ACCESS_KEY_ID", "")
+S3_SECRET_ACCESS_KEY = os.getenv("S3_SECRET_ACCESS_KEY", "")
+S3_REGION = os.getenv("S3_REGION", "auto")
+S3_PUBLIC_BASE_URL = os.getenv("S3_PUBLIC_BASE_URL", "")    # set if the bucket serves public URLs; else presigned URLs are used
+S3_URL_EXPIRY = int(os.getenv("S3_URL_EXPIRY", "604800"))  # presigned URL lifetime in seconds (default 7 days)
+S3_PREFIX = os.getenv("S3_PREFIX", "qwen3-tts")            # key prefix for all objects

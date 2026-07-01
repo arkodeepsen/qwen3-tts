@@ -30,7 +30,7 @@ RUN python3 -m pip install -r /app/requirements.txt
 RUN python3 -m pip cache purge || true
 
 # App code (flat modules)
-COPY config.py chunking.py srt.py audio.py registry.py inference.py actions.py handler.py /app/
+COPY config.py chunking.py srt.py audio.py registry.py inference.py actions.py handler.py storage.py /app/
 
 # Model + voice registry live on the network volume, shared across workers
 ENV HF_HOME=/runpod-volume \

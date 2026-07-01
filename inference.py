@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 import config
-from audio import b64, concat_waveforms, encode_audio
+from audio import b64, concat_waveforms, content_type, encode_audio
 from chunking import pack_sentences, split_sentences
 from srt import build_segments, segments_to_srt
 
@@ -44,7 +44,7 @@ def _units(text: str, return_srt: bool) -> list[str]:
 def synthesize(prompt_items, text, language, seed: int = 42, return_srt: bool = False,
                response_format: str = None, temperature: float = None, top_p: float = None,
                top_k: int = None, repetition_penalty: float = None, max_new_tokens: int = None,
-               model=None) -> dict:
+               to_url: bool = False, s3_key: str = None, model=None) -> dict:
     model = model or get_model()
     fmt = (response_format or config.DEFAULT_FORMAT).lower()
     if fmt not in config.SUPPORTED_FORMATS:
@@ -91,8 +91,7 @@ def synthesize(prompt_items, text, language, seed: int = 42, return_srt: bool = 
         segments = build_segments(units, durations, gap=gap)
         srt_str = segments_to_srt(segments)
 
-    return {
-        "audio_base64": b64(data),
+    result = {
         "format": fmt,
         "sample_rate": sr,
         "duration_sec": round(len(full) / sr, 3),
@@ -100,4 +99,54 @@ def synthesize(prompt_items, text, language, seed: int = 42, return_srt: bool = 
         "size_bytes": len(data),
         "srt": srt_str,
         "segments": segments,
+    }
+    if to_url:  # upload to S3 and return a URL instead of base64 (large outputs)
+        import uuid
+        import storage
+        key = storage.object_key(s3_key or f"outputs/{uuid.uuid4().hex}.{fmt}")
+        result["url"] = storage.upload(key, data, content_type(fmt))
+        result["key"] = key
+    else:
+        result["audio_base64"] = b64(data)
+    return result
+
+
+def merge_audio(keys, response_format: str = None, gap_sec: float = None,
+                output_key: str = None) -> dict:
+    """Concatenate already-generated audio parts (by S3 key) into one file and
+    upload it, returning a URL. This is the long-form assembly step: pure I/O, no
+    GPU generation, so it finishes fast even for hours of audio. Parts are decoded
+    and re-encoded to `response_format`."""
+    import io
+    import uuid
+    import soundfile as sf
+    import storage
+
+    if not keys:
+        raise ValueError("merge requires a non-empty 'keys' list.")
+    fmt = (response_format or config.DEFAULT_FORMAT).lower()
+    if fmt not in config.SUPPORTED_FORMATS:
+        raise ValueError(f"Unsupported format: {fmt}")
+    gap = float(gap_sec) if gap_sec is not None else config.INTER_CHUNK_GAP_SEC
+
+    wavs, sr = [], None
+    for k in keys:
+        wav, s = sf.read(io.BytesIO(storage.download(k)), dtype="float32", always_2d=False)
+        if wav.ndim > 1:
+            wav = np.mean(wav, axis=-1)
+        wavs.append(np.asarray(wav, dtype=np.float32).reshape(-1))
+        sr = int(s) if sr is None else sr
+
+    full = concat_waveforms(wavs, sr, gap=gap)
+    data = encode_audio(full, sr, fmt)
+    key = storage.object_key(output_key or f"outputs/{uuid.uuid4().hex}.{fmt}")
+    url = storage.upload(key, data, content_type(fmt))
+    return {
+        "url": url,
+        "key": key,
+        "format": fmt,
+        "sample_rate": sr,
+        "duration_sec": round(len(full) / sr, 3),
+        "parts": len(keys),
+        "size_bytes": len(data),
     }

@@ -9,4 +9,5 @@ sox
 onnxruntime
 einops
 hf-transfer
+boto3
 runpod>=1.0.0

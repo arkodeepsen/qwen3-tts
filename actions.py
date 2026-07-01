@@ -2,7 +2,7 @@
 import traceback
 
 import config
-from inference import get_model, synthesize
+from inference import get_model, merge_audio, synthesize
 from registry import VoiceRegistry
 
 _REGISTRY = None
@@ -44,7 +44,15 @@ def handle(job_input: dict, registry: VoiceRegistry = None) -> dict:
                 response_format=job_input.get("response_format", config.DEFAULT_FORMAT),
                 temperature=job_input.get("temperature"), top_p=job_input.get("top_p"),
                 top_k=job_input.get("top_k"), repetition_penalty=job_input.get("repetition_penalty"),
-                max_new_tokens=job_input.get("max_new_tokens"))
+                max_new_tokens=job_input.get("max_new_tokens"),
+                to_url=(job_input.get("output") == "url"), s3_key=job_input.get("key"))
+            return {"success": True, **res}
+
+        if action == "merge":
+            _require(job_input, "keys")
+            res = merge_audio(
+                job_input["keys"], response_format=job_input.get("response_format", config.DEFAULT_FORMAT),
+                gap_sec=job_input.get("gap_sec"), output_key=job_input.get("output_key"))
             return {"success": True, **res}
 
         if action == "list_voices":

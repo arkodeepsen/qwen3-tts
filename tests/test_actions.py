@@ -50,3 +50,27 @@ def test_list_and_delete():
 def test_unknown_action():
     out = handle({"action": "frobnicate"}, registry=_reg())
     assert out["success"] is False and "frobnicate" in out["error"]
+
+def test_generate_output_url_forwarded(monkeypatch):
+    reg = _reg(); reg.register("narr", "b64", "hi", "English")
+    import actions
+    captured = {}
+    def fake_syn(prompt, text, language, seed=42, return_srt=False, response_format="wav", **kw):
+        captured.update(kw)
+        return {"url": "https://x/y.wav", "key": "k", "format": response_format}
+    monkeypatch.setattr(actions, "synthesize", fake_syn)
+    out = handle({"action": "generate", "voice_id": "narr-x", "text": "Hi",
+                  "output": "url", "key": "custom"}, registry=reg)
+    assert out["success"] and out["url"] == "https://x/y.wav"
+    assert captured["to_url"] is True and captured["s3_key"] == "custom"
+
+def test_merge_action(monkeypatch):
+    import actions
+    monkeypatch.setattr(actions, "merge_audio",
+                        lambda keys, **kw: {"url": "u", "key": "k", "parts": len(keys)})
+    out = handle({"action": "merge", "keys": ["a", "b"]}, registry=_reg())
+    assert out["success"] and out["url"] == "u" and out["parts"] == 2
+
+def test_merge_requires_keys():
+    out = handle({"action": "merge"}, registry=_reg())
+    assert out["success"] is False and "keys" in out["error"]

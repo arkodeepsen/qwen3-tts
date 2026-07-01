@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 import numpy as np
 import requests
@@ -252,6 +253,60 @@ def write_output(full: np.ndarray, sr: int, output: str, fmt: str):
     raise ValueError(f"Unsupported output format: {fmt}")
 
 
+# --- server-side URL mode: upload each block to S3, then merge into one URL ---
+
+def _generate_block_key(url, api_key, voice_id, text, language, tuning, key):
+    inp = {"action": "generate", "voice_id": voice_id, "text": text, "language": language,
+           "response_format": "wav", "output": "url", "key": key}
+    inp.update(tuning)
+    out = poll_result(url, api_key, _post(url, api_key, {"input": inp}))
+    if not out.get("success") or not out.get("key"):
+        raise RuntimeError(out.get("error", "generation failed (no key returned)"))
+    return out["key"]
+
+
+def _block_key_with_retry(url, api_key, index, total, voice_id, text, language, tuning, key):
+    start = time.monotonic()
+    try:
+        rkey = _generate_block_key(url, api_key, voice_id, text, language, tuning, key)
+    except Exception:
+        try:
+            rkey = _generate_block_key(url, api_key, voice_id, text, language, tuning, key)
+        except Exception as e:
+            raise RuntimeError(f"Block {index} failed after retry: {e}") from e
+    print(f"[{index}/{total}] uploaded {time.monotonic() - start:.1f}s")
+    return index, rkey
+
+
+def generate_block_keys(url, api_key, voice_id, blocks, language, tuning, session, concurrency=2):
+    """Generate each block with output=url (worker uploads the wav to S3) and
+    return the ordered list of object keys."""
+    total = len(blocks)
+    max_workers = max(1, min(concurrency, 3))
+    keys = [None] * total
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [
+            ex.submit(_block_key_with_retry, url, api_key, i + 1, total, voice_id,
+                      block, language, tuning, f"sessions/{session}/part-{i:05d}.wav")
+            for i, block in enumerate(blocks)
+        ]
+        for fut in concurrent.futures.as_completed(futures):
+            index, rkey = fut.result()
+            keys[index - 1] = rkey
+    return keys
+
+
+def merge_remote(url, api_key, keys, fmt, gap, output_key):
+    """Call the server `merge` action to concatenate the uploaded parts into one
+    file, returning the merge result (incl. the final URL)."""
+    payload = {"input": {"action": "merge", "keys": keys, "response_format": fmt,
+                         "gap_sec": gap, "output_key": output_key}}
+    out = poll_result(url, api_key, _post(url, api_key, payload))
+    if not out.get("success") or not out.get("url"):
+        raise RuntimeError(out.get("error", "merge failed"))
+    return out
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Qwen3-TTS long-form / audiobook client")
     p.add_argument("--url", default=(f"https://api.runpod.ai/v2/{os.getenv('ENDPOINT_ID')}/run"
@@ -265,6 +320,10 @@ def main(argv=None):
     p.add_argument("--block-chars", type=int, default=1200)
     p.add_argument("--gap", type=float, default=0.3)
     p.add_argument("--concurrency", type=int, default=2)
+    p.add_argument("--to-url", action="store_true",
+                   help="Server-side: upload each block to S3 and merge into ONE file, "
+                        "returning a URL instead of downloading/concatenating locally. "
+                        "Requires S3_* env vars configured on the endpoint. Best for hours of audio.")
     # passthrough tuning: only included in the request if explicitly set
     p.add_argument("--temperature", type=float, default=None)
     p.add_argument("--top-p", type=float, default=None)
@@ -291,6 +350,20 @@ def main(argv=None):
         val = getattr(args, key)
         if val is not None:
             tuning[key] = val
+
+    if args.to_url:
+        # Server-side: worker uploads each block to S3, then a merge job stitches
+        # them into one file and returns a URL. No hours of audio cross the wire.
+        session = uuid.uuid4().hex[:12]
+        print(f"Split into {len(blocks)} block(s); uploading + merging server-side "
+              f"(session {session}, concurrency={min(args.concurrency, 3)})...")
+        keys = generate_block_keys(args.url, args.api_key, args.voice_id, blocks,
+                                   args.language, tuning, session, concurrency=args.concurrency)
+        out = merge_remote(args.url, args.api_key, keys, args.format, args.gap,
+                           f"sessions/{session}/audiobook.{args.format}")
+        print(f"Merged {out.get('parts', len(keys))} parts -> {out.get('duration_sec')}s")
+        print(f"URL: {out['url']}")
+        return 0
 
     print(f"Split into {len(blocks)} block(s); generating with concurrency={min(args.concurrency, 3)}...")
     results = generate_blocks(args.url, args.api_key, args.voice_id, blocks,

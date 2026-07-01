@@ -7,6 +7,12 @@ import soundfile as sf
 
 _SF_FORMATS = {"wav": "WAV", "flac": "FLAC"}
 _FFMPEG_FORMATS = {"mp3": ("mp3", "libmp3lame"), "opus": ("ogg", "libopus")}
+_CONTENT_TYPES = {"wav": "audio/wav", "mp3": "audio/mpeg", "flac": "audio/flac", "opus": "audio/ogg"}
+
+
+def content_type(fmt: str) -> str:
+    """MIME type for an output format (for S3 uploads)."""
+    return _CONTENT_TYPES.get(fmt.lower(), "application/octet-stream")
 
 
 def concat_waveforms(wavs: list[np.ndarray], sr: int, gap: float = 0.0) -> np.ndarray:
