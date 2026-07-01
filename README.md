@@ -47,6 +47,11 @@ running.
 
 ## API Usage
 
+> **Plugging this into another project?** See **[API.md](./API.md)** — a
+> language-agnostic HTTP integration guide with the production async
+> `/run` → poll `/status` pattern and copy-paste **cURL / Python / Node·TypeScript**
+> clients. The section below is a quick reference.
+
 The worker exposes a single RunPod job endpoint that dispatches on an
 `"action"` field in the job input: `register_voice`, `generate`,
 `list_voices`, `delete_voice`.
