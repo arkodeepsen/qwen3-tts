@@ -632,11 +632,27 @@ import tempfile
 import uuid
 from collections import OrderedDict
 
+from dataclasses import dataclass
+
 import numpy as np
 import soundfile as sf
 import torch
 
-from qwen_tts import VoiceClonePromptItem  # dataclass: ref_code, ref_spk_embedding, x_vector_only_mode, icl_mode, ref_text
+
+@dataclass
+class PromptItem:
+    """Structural mirror of qwen_tts.VoiceClonePromptItem.
+
+    generate_voice_clone only reads these attributes (duck-typed), so a local
+    dataclass keeps the registry decoupled from qwen_tts and unit-testable
+    without installing the model package. Fields must match VoiceClonePromptItem.
+    """
+    ref_code: object
+    ref_spk_embedding: object
+    x_vector_only_mode: bool
+    icl_mode: bool
+    ref_text: object = None
+
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
@@ -693,10 +709,10 @@ class VoiceRegistry:
         }
 
     @staticmethod
-    def _dict_to_item(d: dict, device) -> VoiceClonePromptItem:
+    def _dict_to_item(d: dict, device) -> PromptItem:
         rc = d["ref_code"]
         emb = d["ref_spk_embedding"]
-        return VoiceClonePromptItem(
+        return PromptItem(
             ref_code=(rc.to(device) if isinstance(rc, torch.Tensor) else rc),
             ref_spk_embedding=emb.to(device),
             x_vector_only_mode=bool(d["x_vector_only_mode"]),
