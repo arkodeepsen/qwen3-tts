@@ -8,19 +8,37 @@
         "ref_audio": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav",
         "ref_text": "Okay. Yeah. I resent you. I love you. I respect you. But you blew it!",
         "language": "English"
-      }
+      },
+      "timeout": 300000
     },
     {
-      "name": "generate",
+      "name": "list_voices",
       "input": {
-        "action": "generate",
-        "voice_id": "REPLACE_WITH_REGISTERED_ID",
-        "text": "This is a smoke test of the cloned voice.",
-        "language": "English",
-        "response_format": "wav",
-        "return_srt": true
-      }
+        "action": "list_voices"
+      },
+      "timeout": 60000
     }
   ],
-  "config": { "gpuTypeId": "NVIDIA L4", "gpuCount": 1, "containerDiskInGb": 10, "volumeInGb": 20 }
+  "config": {
+    "gpuTypeId": "NVIDIA L4",
+    "gpuCount": 1,
+    "containerDiskInGb": 10,
+    "volumeInGb": 20,
+    "env": [
+      { "key": "HF_HOME", "value": "/runpod-volume" },
+      { "key": "HF_HUB_CACHE", "value": "/runpod-volume" },
+      { "key": "TRANSFORMERS_CACHE", "value": "/runpod-volume" },
+      { "key": "VOICE_DIR", "value": "/runpod-volume/voices" }
+    ],
+    "allowedCudaVersions": [
+      "12.8",
+      "12.7",
+      "12.6",
+      "12.5",
+      "12.4",
+      "12.3",
+      "12.2",
+      "12.1"
+    ]
+  }
 }

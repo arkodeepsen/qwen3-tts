@@ -20,7 +20,13 @@ def test_hub_json_serverless_audio():
     assert hub["config"]["env"] and any(e["key"] == "VOICE_DIR" for e in hub["config"]["env"])
 
 
-def test_tests_json_has_register_and_generate():
+def test_tests_json_hub_ready():
     t = json.loads((ROOT / ".runpod" / "tests.json").read_text())
     actions = [c["input"]["action"] for c in t["tests"]]
-    assert "register_voice" in actions and "generate" in actions
+    # Hub tests must be self-contained (no cross-test output chaining), so we
+    # exercise the heavy register path + a no-arg list, not a voice_id-dependent generate.
+    assert "register_voice" in actions and "list_voices" in actions
+    assert all("timeout" in c for c in t["tests"])  # Hub requires per-test timeout
+    env_keys = {e["key"] for e in t["config"]["env"]}
+    assert {"HF_HOME", "VOICE_DIR"} <= env_keys      # model + voices persist on the volume
+    assert t["config"]["allowedCudaVersions"]        # non-empty CUDA compatibility list

@@ -25,6 +25,7 @@ COPY config.py chunking.py srt.py audio.py registry.py inference.py actions.py h
 # Model + voice registry live on the network volume, shared across workers
 ENV HF_HOME=/runpod-volume \
     HF_HUB_CACHE=/runpod-volume \
+    TRANSFORMERS_CACHE=/runpod-volume \
     VOICE_DIR=/runpod-volume/voices \
     PYTHONUNBUFFERED=1
 

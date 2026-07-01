@@ -1,5 +1,9 @@
 # Qwen3-TTS Voice Cloning — Serverless RunPod Worker
 
+[![RunPod](https://api.runpod.io/badge/arkodeepsen/qwen3-tts)](https://console.runpod.io/hub/arkodeepsen/qwen3-tts)
+
+Deploy in one click from the [RunPod Hub](https://console.runpod.io/hub/arkodeepsen/qwen3-tts), or build the image yourself (below).
+
 A [RunPod Serverless](https://www.runpod.io/serverless-gpu) worker that wraps
 [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) voice cloning: register a
 speaker from a short reference clip, then generate speech in that voice from

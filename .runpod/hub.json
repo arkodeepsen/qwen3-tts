@@ -10,6 +10,7 @@
     "env": [
       { "key": "HF_HOME", "value": "/runpod-volume" },
       { "key": "HF_HUB_CACHE", "value": "/runpod-volume" },
+      { "key": "TRANSFORMERS_CACHE", "value": "/runpod-volume" },
       { "key": "VOICE_DIR", "value": "/runpod-volume/voices" }
     ]
   }
