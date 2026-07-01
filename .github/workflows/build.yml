@@ -4,6 +4,12 @@ on:
     branches: [main, master]
     tags: ["v*"]
   workflow_dispatch:
+
+# Don't stack duplicate heavy CUDA builds — cancel superseded runs on the same ref.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,7 +21,7 @@ jobs:
       # The runpod/pytorch CUDA base + flash-attn build exceeds the default
       # ~14GB runner disk. Reclaim ~20-30GB of preinstalled tooling first.
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
         with:
           tool-cache: true
           android: true
