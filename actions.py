@@ -41,7 +41,10 @@ def handle(job_input: dict, registry: VoiceRegistry = None) -> dict:
             res = synthesize(
                 prompt, text=job_input["text"], language=job_input.get("language", "Auto"),
                 seed=int(job_input.get("seed", 42)), return_srt=bool(job_input.get("return_srt", False)),
-                response_format=job_input.get("response_format", config.DEFAULT_FORMAT))
+                response_format=job_input.get("response_format", config.DEFAULT_FORMAT),
+                temperature=job_input.get("temperature"), top_p=job_input.get("top_p"),
+                top_k=job_input.get("top_k"), repetition_penalty=job_input.get("repetition_penalty"),
+                max_new_tokens=job_input.get("max_new_tokens"))
             return {"success": True, **res}
 
         if action == "list_voices":

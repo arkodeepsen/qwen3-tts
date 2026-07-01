@@ -63,3 +63,24 @@ def test_stability_params_forwarded():
     assert kw["top_p"] == config.TOP_P
     assert kw["temperature"] == config.TEMPERATURE
     assert kw["max_new_tokens"] == config.MAX_NEW_TOKENS
+
+def test_per_request_params_override_defaults():
+    import config
+    m = FakeModel()
+    synthesize(_prompt(), "Hello.", "English", temperature=0.5, repetition_penalty=1.3,
+               top_p=0.95, top_k=20, max_new_tokens=256, model=m)
+    kw = m.last_kwargs
+    assert kw["temperature"] == 0.5
+    assert kw["repetition_penalty"] == 1.3
+    assert kw["top_p"] == 0.95
+    assert kw["top_k"] == 20
+    assert kw["max_new_tokens"] == 256
+
+def test_unset_params_fall_back_to_config():
+    import config
+    m = FakeModel()
+    synthesize(_prompt(), "Hello.", "English", temperature=0.5, model=m)  # only temperature set
+    kw = m.last_kwargs
+    assert kw["temperature"] == 0.5                        # override
+    assert kw["repetition_penalty"] == config.REPETITION_PENALTY  # default
+    assert kw["max_new_tokens"] == config.MAX_NEW_TOKENS          # default

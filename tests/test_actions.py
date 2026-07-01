@@ -30,7 +30,7 @@ def test_generate_happy(monkeypatch):
     reg = _reg(); reg.register("narr", "b64", "hi", "English")
     import actions
     monkeypatch.setattr(actions, "synthesize",
-        lambda prompt, text, language, seed=42, return_srt=False, response_format="wav":
+        lambda prompt, text, language, seed=42, return_srt=False, response_format="wav", **kw:
             {"audio_base64": "AAA", "format": response_format, "chunks": 1})
     out = handle({"action": "generate", "voice_id": "narr-x", "text": "Hello.",
                   "response_format": "mp3"}, registry=reg)

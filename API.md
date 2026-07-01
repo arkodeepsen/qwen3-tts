@@ -89,6 +89,14 @@ Response: `{ success, voice_id, sample_rate, name, language }`
 | `response_format` | string | no | `"wav"` | `wav` \| `mp3` \| `flac` \| `opus`. |
 | `return_srt` | boolean | no | `false` | If `true`, returns timed `srt` + `segments` (one per sentence). |
 | `seed` | integer | no | `42` | Re-applied before every chunk for consistent timbre. |
+| `temperature` | float | no | `0.8` | Sampling temperature; higher = more varied/expressive, lower = more stable. |
+| `top_p` | float | no | `0.9` | Nucleus sampling; lower = more stable. |
+| `top_k` | integer | no | `50` | Top-k sampling cutoff. |
+| `repetition_penalty` | float | no | `1.1` | Raise toward `1.3` if you hear looping/rambling. |
+| `max_new_tokens` | integer | no | `1024` | Hard cap on tokens per sentence-chunk (safety against runaway generation). |
+
+All five tuning params are optional per-request overrides of the worker's
+env-tunable defaults — see [§3 Generation tuning & stability](#3-generation-tuning--stability).
 
 Response fields:
 
@@ -116,7 +124,52 @@ Input: `{ "action": "delete_voice", "voice_id": "..." }` →
 
 ---
 
-## 3. Clients (copy-paste)
+## 3. Generation tuning & stability
+
+The 1.7B-Base model can occasionally **ramble or fail to emit an
+end-of-sequence token**, producing minutes of audio for what should be a
+single short sentence. This is a documented model quirk — see
+[QwenLM/Qwen3-TTS#239](https://github.com/QwenLM/Qwen3-TTS/issues/239).
+
+Two known triggers:
+
+- **Mismatched `ref_text`.** A transcript passed to `register_voice` that
+  does not *exactly* match the words spoken in `ref_audio` corrupts the ICL
+  voice-clone conditioning and makes runaway generation more likely. **Always
+  register with the precise transcript of the clip.**
+- **Loose sampling.** High `temperature` / high `top_p` / low
+  `repetition_penalty` make runaway generation more likely, which is why this
+  worker ships stability-focused defaults (`repetition_penalty=1.1`,
+  `top_p=0.9`, `temperature=0.8`).
+
+Reference audio is also trimmed to `REF_AUDIO_MAX_SEC` (30s by default) at
+registration — long reference clips are another EOS-failure trigger.
+
+**If a particular voice or line still rambles/loops:**
+
+- Raise `repetition_penalty` (`1.1` → `1.3`).
+- Lower `top_p` (`0.9` → `0.8`) and/or `temperature` (`0.8` → `0.7`).
+- For more expressive variety (at some stability cost), raise `temperature`
+  a little and watch for looping.
+
+Set these either **per-request** via the `generate` params in §2, or as
+**operator defaults** via env vars (apply to every request that doesn't pass
+an override):
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `TOP_K` | `50` | Default `top_k`. |
+| `TOP_P` | `0.9` | Default `top_p`. |
+| `TEMPERATURE` | `0.8` | Default `temperature`. |
+| `REPETITION_PENALTY` | `1.1` | Default `repetition_penalty`. |
+| `MAX_NEW_TOKENS` | `1024` | Default `max_new_tokens` (per-chunk hard cap). |
+| `REF_AUDIO_MAX_SEC` | `30` | Max reference-clip length kept at registration. |
+
+Per-request `generate` params always override these env defaults.
+
+---
+
+## 4. Clients (copy-paste)
 
 Replace `ENDPOINT_ID` / `RUNPOD_API_KEY`. All examples do the production
 **async submit → poll** flow except the first cURL (which uses `/runsync` for a
@@ -242,7 +295,35 @@ require("fs").writeFileSync("out.mp3", audio);
 
 ---
 
-## 4. Errors
+## 5. Long-form audio (audiobooks / hours)
+
+A single serverless job **cannot** return hours of audio: it's bounded by the
+per-job `execution_timeout` (~300s) and by the response payload size, since
+audio is returned as base64 inside the JSON response. Long-form synthesis is
+therefore **client-orchestrated**: split the script into blocks, call
+`generate` per block, concatenate client-side.
+
+Use the provided helper, `client/longform.py`:
+
+```bash
+python client/longform.py --voice-id <id> --input script.txt --output audiobook.wav \
+  [--block-chars 1200] [--concurrency 2] [--format mp3]
+```
+
+It splits the script paragraph/sentence-aware, generates blocks in parallel
+(bounded by the endpoint's `max_workers=3`), and concatenates them into one
+file — suitable for multi-hour audiobooks. It also accepts the tuning flags
+from §3 (`--temperature`, `--top-p`, `--top-k`, `--repetition-penalty`,
+`--max-new-tokens`).
+
+Register the voice **once** first via `register_voice` (§2), then pass its
+`voice_id` to `longform.py`. Total compute time is roughly
+`audio length × real-time factor` (see the README's Performance section) —
+budget accordingly and prefer several parallel jobs over one enormous one.
+
+---
+
+## 6. Errors
 
 Two layers:
 
@@ -260,7 +341,7 @@ Example application error:
 
 ---
 
-## 5. Operational notes
+## 7. Operational notes
 
 - **Register once, generate many.** Registration extracts and caches a speaker
   profile on the network volume; `generate` only needs the `voice_id`. Don't
@@ -274,5 +355,7 @@ Example application error:
   Never health-check by submitting a `/run` job.
 - **Cost:** billed only for active worker time during `/run`/`/runsync`. `$0`
   while idle (scale-to-zero). `/status` polling is free.
+- **Generation tuning and stability quirks:** see §3. **Multi-hour audio:**
+  see §5.
 
 See the [README](./README.md) for deployment, model specs, and performance.

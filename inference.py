@@ -42,7 +42,9 @@ def _units(text: str, return_srt: bool) -> list[str]:
 
 
 def synthesize(prompt_items, text, language, seed: int = 42, return_srt: bool = False,
-               response_format: str = None, model=None) -> dict:
+               response_format: str = None, temperature: float = None, top_p: float = None,
+               top_k: int = None, repetition_penalty: float = None, max_new_tokens: int = None,
+               model=None) -> dict:
     model = model or get_model()
     fmt = (response_format or config.DEFAULT_FORMAT).lower()
     if fmt not in config.SUPPORTED_FORMATS:
@@ -52,20 +54,20 @@ def synthesize(prompt_items, text, language, seed: int = 42, return_srt: bool = 
     if not units:
         raise ValueError("No synthesizable text provided.")
 
-    # Explicit, stability-focused generation params. Without these the Base model
-    # relies on loose defaults (top_p=1.0, no repetition penalty) and can fail to
-    # emit EOS -> runaway audio. max_new_tokens also hard-caps a single chunk.
+    # Generation params: per-request overrides win, else the env-tunable config
+    # defaults. These are stability-focused so the Base model reliably emits EOS
+    # (loose defaults -> runaway audio; see QwenLM/Qwen3-TTS#239). max_new_tokens
+    # also hard-caps a single chunk.
+    top_k_v = int(top_k) if top_k is not None else config.TOP_K
+    top_p_v = float(top_p) if top_p is not None else config.TOP_P
+    temp_v = float(temperature) if temperature is not None else config.TEMPERATURE
+    rep_v = float(repetition_penalty) if repetition_penalty is not None else config.REPETITION_PENALTY
+    max_tok_v = int(max_new_tokens) if max_new_tokens is not None else config.MAX_NEW_TOKENS
     gen_kwargs = dict(
         do_sample=True,
-        top_k=config.TOP_K,
-        top_p=config.TOP_P,
-        temperature=config.TEMPERATURE,
-        repetition_penalty=config.REPETITION_PENALTY,
-        subtalker_dosample=True,
-        subtalker_top_k=config.TOP_K,
-        subtalker_top_p=config.TOP_P,
-        subtalker_temperature=config.TEMPERATURE,
-        max_new_tokens=config.MAX_NEW_TOKENS,
+        top_k=top_k_v, top_p=top_p_v, temperature=temp_v, repetition_penalty=rep_v,
+        subtalker_dosample=True, subtalker_top_k=top_k_v, subtalker_top_p=top_p_v,
+        subtalker_temperature=temp_v, max_new_tokens=max_tok_v,
     )
 
     wavs, durations, sr = [], [], None
