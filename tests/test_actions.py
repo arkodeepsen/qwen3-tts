@@ -62,15 +62,19 @@ def test_generate_output_url_forwarded(monkeypatch):
     out = handle({"action": "generate", "voice_id": "narr-x", "text": "Hi",
                   "output": "url", "key": "custom"}, registry=reg)
     assert out["success"] and out["url"] == "https://x/y.wav"
-    assert captured["to_url"] is True and captured["s3_key"] == "custom"
+    assert captured["output"] == "url" and captured["s3_key"] == "custom"
 
-def test_merge_action(monkeypatch):
-    import actions
-    monkeypatch.setattr(actions, "merge_audio",
-                        lambda keys, **kw: {"url": "u", "key": "k", "parts": len(keys)})
-    out = handle({"action": "merge", "keys": ["a", "b"]}, registry=_reg())
-    assert out["success"] and out["url"] == "u" and out["parts"] == 2
+def test_delete_output(monkeypatch):
+    import storage
+    deleted = {}
+    monkeypatch.setattr(storage, "object_key", lambda name: f"pfx/{name}")
+    monkeypatch.setattr(storage, "delete", lambda key: deleted.setdefault("k", key))
+    out = handle({"action": "delete_output", "key": "pfx/outputs/x.wav"}, registry=_reg())
+    assert out["success"] and out["deleted"] == "pfx/outputs/x.wav"
+    assert deleted["k"] == "pfx/outputs/x.wav"
 
-def test_merge_requires_keys():
-    out = handle({"action": "merge"}, registry=_reg())
-    assert out["success"] is False and "keys" in out["error"]
+def test_delete_output_scoped(monkeypatch):
+    import storage
+    monkeypatch.setattr(storage, "object_key", lambda name: f"pfx/{name}")
+    out = handle({"action": "delete_output", "key": "pfx/voices/secret"}, registry=_reg())
+    assert out["success"] is False and "outputs/" in out["error"]

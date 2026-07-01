@@ -62,7 +62,7 @@ So the integration pattern is always: submit → poll until `status == "COMPLETE
 ## 2. Actions
 
 All actions are selected by `input.action`: `register_voice`, `generate`,
-`merge`, `list_voices`, `delete_voice`. Every response is
+`delete_output`, `list_voices`, `delete_voice`. Every response is
 `{"success": true, ...}` or `{"success": false, "error": "<message>"}`.
 
 ### `register_voice` → returns a `voice_id`
@@ -95,13 +95,14 @@ Response: `{ success, voice_id, sample_rate, name, language }`
 | `top_k` | integer | no | `50` | Top-k sampling cutoff. |
 | `repetition_penalty` | float | no | `1.1` | Raise toward `1.3` if you hear looping/rambling. |
 | `max_new_tokens` | integer | no | `1024` | Hard cap on tokens per sentence-chunk (safety against runaway generation). |
-| `output` | string | no | `"base64"` | `"base64"` (inline in the response) or `"url"` (upload to S3, response contains `url`+`key` instead). See [§3.5 Object storage (S3)](#35-object-storage-s3). |
-| `key` | string | no | auto-generated | Only used when `output: "url"`. Object name for the upload, namespaced under `S3_PREFIX`. Omit to let the worker generate one (`outputs/<uuid>.<format>`). |
+| `output` | string | no | `"auto"` | `"auto"` (inline `audio_base64` for small results, uploads and returns `url`+`key` for large ones), `"base64"` (always inline), or `"url"` (always upload; errors if S3 isn't configured). See [§3.5 Object storage (S3)](#35-object-storage-s3). |
+| `key` | string | no | auto-generated | Object name for the upload when a URL is returned, namespaced under `S3_PREFIX`. Omit to let the worker generate one (`outputs/<uuid>.<format>`). |
 
 All five tuning params are optional per-request overrides of the worker's
 env-tunable defaults — see [§3 Generation tuning & stability](#3-generation-tuning--stability).
 
-Response fields (`output: "base64"`, the default):
+Response fields (inline case — `output: "base64"`, or `"auto"` at or below
+`MAX_INLINE_BYTES`, the common case):
 
 | Field | Type | Description |
 |---|---|---|
@@ -115,8 +116,9 @@ Response fields (`output: "base64"`, the default):
 | `srt` | string \| null | SRT subtitle text when `return_srt: true`. |
 | `segments` | array \| null | `[{index, start, end, text}]` when `return_srt: true`. |
 
-Response fields (`output: "url"`) — identical except `audio_base64` is
-replaced by `url` + `key`; `format`, `sample_rate`, `duration_sec`, `chunks`,
+Response fields (URL case — `output: "url"`, or `"auto"` above
+`MAX_INLINE_BYTES`) — identical except `audio_base64` is replaced by
+`url` + `key`; `format`, `sample_rate`, `duration_sec`, `chunks`,
 `size_bytes`, `srt`, `segments` are unchanged:
 
 | Field | Type | Description |
@@ -124,37 +126,29 @@ replaced by `url` + `key`; `format`, `sample_rate`, `duration_sec`, `chunks`,
 | `success` | bool | |
 | `url` | string | Public URL (if `S3_PUBLIC_BASE_URL` is set) or a time-limited presigned URL, good for `S3_URL_EXPIRY` seconds. |
 | `key` | string | The S3 object key the audio was uploaded to (echoes `key` if you passed one). |
-| `format` / `sample_rate` / `duration_sec` / `chunks` / `size_bytes` / `srt` / `segments` | — | Same as base64 mode. |
+| `format` / `sample_rate` / `duration_sec` / `chunks` / `size_bytes` / `srt` / `segments` | — | Same as the inline case. |
 
 `output: "url"` requires S3 storage to be configured on the endpoint (§3.5).
 If it isn't, the job returns the standard error envelope, e.g.
 `{"success": false, "error": "S3 storage is not configured. Set S3_BUCKET, ..."}`.
+`output: "auto"` never errors this way — it just falls back to inline
+base64 if storage isn't configured, regardless of size.
 
-### `merge` → concatenate uploaded parts into ONE file, returns a URL
+### `delete_output` → free a previously-uploaded output object
 
-Stitches audio parts that were previously generated with `output: "url"`
-(identified by their S3 keys) into a single file and uploads the result. This
-is a pure I/O job — no GPU, no model load — so it completes in seconds even
-for parts totaling hours of audio. It's the mechanism behind the long-form
-client's `--to-url` mode (§5).
+Deletes a single object uploaded by `generate`. Useful for freeing space
+right after you've fetched its `url` — see the cleanup warning in
+[§3.5 Object storage (S3)](#35-object-storage-s3) for why this matters on
+RunPod's network-volume bucket.
 
 | Field | Type | Required | Default | Notes |
 |---|---|---|---|---|
-| `action` | string | yes | — | `"merge"` |
-| `keys` | array of strings | yes | — | S3 object keys of the parts, **in the order they should be concatenated**. |
-| `response_format` | string | no | `"wav"` | `wav` \| `mp3` \| `flac` \| `opus`. Parts are decoded and re-encoded to this format. |
-| `gap_sec` | float | no | `0.15` | Silence inserted between consecutive parts, in seconds. |
-| `output_key` | string | no | auto-generated | Object name for the merged file, namespaced under `S3_PREFIX`. Omit to let the worker generate one. |
+| `action` | string | yes | — | `"delete_output"` |
+| `key` | string | yes | — | Output object key to delete. Must be under the `outputs/` prefix (i.e. a key `generate` produced) — anything else returns an error envelope. |
 
-Response: `{ success, url, key, format, sample_rate, duration_sec, parts, size_bytes }`
+Response: `{ success, deleted }`
 
-- `url` / `key` — location of the merged file (same semantics as `generate`'s
-  `output: "url"` response).
-- `parts` — number of keys merged.
-- `sample_rate` / `duration_sec` / `size_bytes` — describe the merged output.
-
-`merge` requires S3 storage to be configured (§3.5) — both to download the
-input parts and to upload the merged result.
+Requires S3 storage to be configured (§3.5).
 
 ### `list_voices` → all registered voices
 
@@ -213,32 +207,56 @@ Per-request `generate` params always override these env defaults.
 
 ### 3.5 Object storage (S3)
 
-**Optional.** Base64 output (the default) needs no storage at all. Object
-storage is only required for `generate`'s `output: "url"` mode and for the
-`merge` action (§2) — i.e. for getting a URL back instead of inline base64,
-and for the long-form `--to-url` flow (§5).
+**Optional.** `output: "auto"` (the default) needs no storage at all — it
+silently stays on inline base64 if storage isn't configured. Storage is only
+needed if you want `generate` to return a `url` for large results (or you
+explicitly pass `output: "url"`), or if you want to use `delete_output` (§2).
 
-Any S3-compatible provider works: **Cloudflare R2** (S3-compatible, 10 GB
-free tier, zero egress fees — recommended), AWS S3, Backblaze B2, MinIO, or
-RunPod S3. Configure it entirely via environment variables on the RunPod
-endpoint (Settings → Environment Variables):
+Any S3-compatible provider works — Cloudflare R2, AWS S3, Backblaze B2,
+MinIO, etc.
+
+**Using RunPod's own network-volume S3 (recommended — no separate account
+needed):** every RunPod network volume exposes an S3-compatible API. Point
+the worker at your volume with:
+
+| Env var | Value |
+|---|---|
+| `S3_ENDPOINT_URL` | `https://s3api-<region>.runpod.io` (e.g. `https://s3api-eu-ro-1.runpod.io`) |
+| `S3_BUCKET` | your network-volume ID |
+| `S3_REGION` | the volume's region (e.g. `eu-ro-1`) |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | a RunPod S3 API key pair (console → Settings → S3 API Keys) |
+
+R2, AWS S3, Backblaze B2, and MinIO are configured the same way — swap in
+that provider's endpoint, bucket, region, and credentials. Configure
+everything via environment variables on the RunPod endpoint (Settings →
+Environment Variables):
 
 | Env var | Required? | Default | Purpose |
 |---|---|---|---|
-| `S3_BUCKET` | **yes** (for URL/merge) | — | Bucket name. |
-| `S3_ACCESS_KEY_ID` | **yes** (for URL/merge) | — | Access key. |
-| `S3_SECRET_ACCESS_KEY` | **yes** (for URL/merge) | — | Secret key. |
-| `S3_ENDPOINT_URL` | required for non-AWS providers | `""` | e.g. `https://<account_id>.r2.cloudflarestorage.com` for R2. Leave blank for AWS S3. |
+| `S3_ENDPOINT_URL` | required for non-AWS providers | `""` | e.g. RunPod's `https://s3api-eu-ro-1.runpod.io`, or R2's `https://<account_id>.r2.cloudflarestorage.com`. Leave blank for AWS S3. |
+| `S3_BUCKET` | **yes** (to enable storage) | — | Bucket name (for RunPod: your network-volume ID). |
+| `S3_ACCESS_KEY_ID` | **yes** (to enable storage) | — | Access key. |
+| `S3_SECRET_ACCESS_KEY` | **yes** (to enable storage) | — | Secret key. |
 | `S3_REGION` | no | `auto` | Region passed to the S3 client. |
 | `S3_PUBLIC_BASE_URL` | no | `""` | If set, returned URLs are `S3_PUBLIC_BASE_URL/<key>` (public bucket/CDN). If unset, the worker returns a presigned URL instead. |
 | `S3_URL_EXPIRY` | no | `604800` (7 days) | Lifetime in seconds of presigned URLs (ignored when `S3_PUBLIC_BASE_URL` is set). |
 | `S3_PREFIX` | no | `qwen3-tts` | Key prefix every auto-generated/namespaced object is stored under. |
+| `MAX_INLINE_BYTES` | no | `5242880` (5 MB) | `output: "auto"` threshold: encoded audio at or below this size comes back inline as base64; above it, it's uploaded and a `url` is returned. |
+| `OUTPUT_TTL_SEC` | no | `86400` (24 h) | Age at which objects under `outputs/` are auto-pruned on every upload (see warning below). `0` disables auto-pruning. |
 
 Storage is considered "configured"/enabled once `S3_BUCKET`,
 `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` are all set. If `output: "url"`
-or `merge` is requested while storage isn't configured, the job returns
-`{"success": false, "error": "S3 storage is not configured. ..."}` rather than
-failing silently.
+(or `"auto"` needing to upload) is requested while storage isn't configured,
+the job returns `{"success": false, "error": "S3 storage is not configured. ..."}`
+rather than failing silently.
+
+**Important — the RunPod network-volume bucket is shared.** If you use
+RunPod's network-volume S3, it's the **same 10 GB volume** that also holds
+the model cache (~5 GB) and the voice registry, so output files must not be
+allowed to accumulate. Every upload triggers a best-effort prune of objects
+under `outputs/` older than `OUTPUT_TTL_SEC` (default 24 hours); call
+`delete_output` (§2) to free a specific object immediately, e.g. right after
+downloading it from its `url`.
 
 ---
 
@@ -371,64 +389,38 @@ require("fs").writeFileSync("out.mp3", audio);
 ## 5. Long-form audio (audiobooks / hours)
 
 A single serverless job **cannot** return hours of audio: it's bounded by the
-per-job `execution_timeout` (~300s) and by the response payload size, since
-audio is returned as base64 inside the JSON response. Long-form synthesis is
-therefore always **split into many blocks**, generated as separate short jobs.
-`client/longform.py` supports two ways to assemble those blocks back into one
-file: **local merge** (default, no storage needed) and **`--to-url`** (server
-merge, one URL, best for the longest jobs).
+per-job `execution_timeout` (~300s) and by the response payload size. The API
+is deliberately simple — `generate` is one call = one synthesis — so
+long-form audio is handled **entirely client-side**: split the script into
+blocks, fire off many **parallel `generate` requests** against your endpoint
+(RunPod fans them out across your `max_workers` workers, which finishes
+faster than one sequential job would anyway), and assemble the results
+yourself once they all come back.
 
-Register the voice **once** first via `register_voice` (§2), then pass its
-`voice_id` to `longform.py`. Total compute time is roughly
-`audio length × real-time factor` (see the README's Performance section) —
-budget accordingly and prefer several parallel jobs over one enormous one.
-
-### 5.1 Default mode — local merge
+`client/longform.py` implements exactly that flow. Register the voice
+**once** first via `register_voice` (§2), then pass its `voice_id`:
 
 ```bash
-python client/longform.py --voice-id <id> --input script.txt --output audiobook.wav \
-  [--block-chars 1200] [--concurrency 2] [--format mp3]
+python client/longform.py --voice-id <id> --input book.txt --output audiobook.mp3 --concurrency 12
 ```
 
-It splits the script paragraph/sentence-aware, generates blocks in parallel
-(bounded by the endpoint's `max_workers=3`), downloads each block's base64
-audio, and concatenates them **on your machine** into one file — suitable for
-shorter pieces, no S3 needed. It also accepts the tuning flags from §3
-(`--temperature`, `--top-p`, `--top-k`, `--repetition-penalty`,
-`--max-new-tokens`).
+It splits the script paragraph/sentence-aware (`--block-chars`, default
+1200), generates blocks **in parallel** (`--concurrency` — uncapped; set it
+to your endpoint's `max_workers` for maximum throughput), downloads each
+block's base64 audio (§2's `generate` response), and concatenates them **on
+your machine** into a single output file (`--format wav|mp3|flac|opus`). It
+also accepts the tuning flags from §3 (`--temperature`, `--top-p`,
+`--top-k`, `--repetition-penalty`, `--max-new-tokens`, `--seed`).
 
-### 5.2 `--to-url` — one URL for hours of audio (recommended for long jobs)
+Total compute time is roughly `audio length × real-time factor` (see the
+README's Performance section), but since blocks generate in parallel across
+your endpoint's workers, wall-clock time is closer to
+`total compute time ÷ concurrency`.
 
-```bash
-python client/longform.py --voice-id <id> --input book.txt --format mp3 --to-url --concurrency 3
-```
-
-Requires S3 storage configured on the endpoint (§3.5). Instead of downloading
-audio to your machine, this mode:
-
-1. Generates every block with `output: "url"` (§2) — each block's audio is
-   uploaded to S3 by the worker and only a small JSON response (a `key`, not
-   the audio) comes back over the wire.
-2. Calls the `merge` action (§2) once with all the block keys, in order —
-   a pure I/O job (no GPU) that stitches them server-side and uploads the
-   final file.
-3. Prints the single resulting `url`.
-
-**Why this is the right way to get a multi-hour audiobook as a download
-link:** generation is split across many short GPU jobs, each returning a tiny
-response (a key, not audio) — so no individual job risks hitting the
-`execution_timeout` or a large response payload. The merge step that stitches
-everything together is a single fast non-GPU job, so it isn't subject to
-generation time at all — it finishes in seconds regardless of how many hours
-of audio it's concatenating. Neither the per-job execution-timeout nor the
-response-size limit is ever hit, no matter how long the source text is.
-
-Contrast with §5.1 (no `--to-url`): that mode downloads every block's base64
-audio to your machine and concatenates locally. It works fine for shorter
-pieces and needs no S3 setup, but for very long scripts you're pulling all
-the audio over HTTP and holding it in memory client-side — `--to-url` avoids
-that entirely by keeping the audio server-side until the single final
-download.
+No object storage is required — everything is assembled locally. If you want
+the final file available as a URL, upload the local file to your own storage,
+or issue one more `generate` call with `output: "url"` (§2). There is no
+server-side merge action; the caller always owns assembly.
 
 ---
 
@@ -464,9 +456,10 @@ Example application error:
   Never health-check by submitting a `/run` job.
 - **Cost:** billed only for active worker time during `/run`/`/runsync`. `$0`
   while idle (scale-to-zero). `/status` polling is free.
-- **URL output is optional.** `generate` defaults to inline `audio_base64`;
-  pass `output: "url"` only if you've configured S3 (§3.5) and want a link
-  instead of inline bytes.
+- **URL output is optional.** `generate`'s default `output: "auto"` returns
+  inline `audio_base64` unless the result is large enough to need a `url`
+  (§2); storage is only required if you want URLs or `delete_output`, and
+  is otherwise never touched.
 - **Generation tuning and stability quirks:** see §3. **Object storage
   (S3):** see §3.5. **Multi-hour audio:** see §5.
 

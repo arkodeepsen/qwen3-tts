@@ -1,16 +1,14 @@
 """Optional S3-compatible object storage: upload audio and hand back a URL.
 
-This powers two things a single serverless job cannot do:
-  - return audio as a URL instead of base64 (large outputs),
-  - the long-form `merge` flow (hours of audio assembled from pre-generated parts).
+Lets `generate` return a URL instead of base64 when the result is large (the
+serverless response has a size limit). Any S3-compatible provider works — RunPod
+network-volume S3, Cloudflare R2, AWS S3, Backblaze B2, MinIO — configured via the
+S3_* env vars in config.py. If storage is not configured, `enabled()` is False and
+URL output is disabled (output="auto" falls back to base64; output="url" errors).
 
-Any S3-compatible provider works — Cloudflare R2, AWS S3, Backblaze B2, MinIO,
-RunPod S3 — configured entirely via the S3_* env vars in config.py. If storage
-is not configured, `enabled()` is False and the URL/merge features are disabled
-with a clear error rather than silently failing.
-
-Keys passed to upload()/download() are used verbatim; build namespaced keys with
-object_key() so everything lives under S3_PREFIX.
+Keys passed to upload()/download()/delete() are used verbatim; build namespaced
+keys with object_key() so everything lives under S3_PREFIX. Old outputs are pruned
+via prune_outputs() so the (possibly shared) volume never fills.
 """
 import config
 
@@ -41,7 +39,7 @@ def _require():
         raise ValueError(
             "S3 storage is not configured. Set S3_BUCKET, S3_ACCESS_KEY_ID and "
             "S3_SECRET_ACCESS_KEY (plus S3_ENDPOINT_URL for non-AWS providers) to "
-            "enable URL output and long-form merge.")
+            "enable URL output for large results.")
 
 
 def object_key(name: str) -> str:
@@ -73,3 +71,35 @@ def download(key: str) -> bytes:
     """Fetch object bytes for `key` (used verbatim)."""
     _require()
     return _get_client().get_object(Bucket=config.S3_BUCKET, Key=key)["Body"].read()
+
+
+def delete(key: str) -> None:
+    """Delete an object by key (used verbatim)."""
+    _require()
+    _get_client().delete_object(Bucket=config.S3_BUCKET, Key=key)
+
+
+def prune_prefix(prefix: str, older_than_sec: int) -> int:
+    """Delete objects under `prefix` older than `older_than_sec`. Returns the
+    number deleted. Best-effort housekeeping so the (shared) volume never fills."""
+    if older_than_sec <= 0:
+        return 0
+    import datetime
+    client = _get_client()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    deleted = 0
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=config.S3_BUCKET, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            if (now - obj["LastModified"]).total_seconds() > older_than_sec:
+                client.delete_object(Bucket=config.S3_BUCKET, Key=obj["Key"])
+                deleted += 1
+    return deleted
+
+
+def prune_outputs() -> int:
+    """Prune old objects under the outputs/ prefix (best-effort; never raises)."""
+    try:
+        return prune_prefix(object_key("outputs/"), config.OUTPUT_TTL_SEC)
+    except Exception:
+        return 0

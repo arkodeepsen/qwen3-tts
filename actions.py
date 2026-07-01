@@ -2,7 +2,7 @@
 import traceback
 
 import config
-from inference import get_model, merge_audio, synthesize
+from inference import get_model, synthesize
 from registry import VoiceRegistry
 
 _REGISTRY = None
@@ -45,14 +45,7 @@ def handle(job_input: dict, registry: VoiceRegistry = None) -> dict:
                 temperature=job_input.get("temperature"), top_p=job_input.get("top_p"),
                 top_k=job_input.get("top_k"), repetition_penalty=job_input.get("repetition_penalty"),
                 max_new_tokens=job_input.get("max_new_tokens"),
-                to_url=(job_input.get("output") == "url"), s3_key=job_input.get("key"))
-            return {"success": True, **res}
-
-        if action == "merge":
-            _require(job_input, "keys")
-            res = merge_audio(
-                job_input["keys"], response_format=job_input.get("response_format", config.DEFAULT_FORMAT),
-                gap_sec=job_input.get("gap_sec"), output_key=job_input.get("output_key"))
+                output=job_input.get("output", "auto"), s3_key=job_input.get("key"))
             return {"success": True, **res}
 
         if action == "list_voices":
@@ -63,6 +56,15 @@ def handle(job_input: dict, registry: VoiceRegistry = None) -> dict:
             ok = registry.delete(job_input["voice_id"])
             return {"success": ok, "deleted": job_input["voice_id"] if ok else None,
                     **({} if ok else {"error": f"Unknown voice_id: {job_input['voice_id']}"})}
+
+        if action == "delete_output":
+            _require(job_input, "key")
+            import storage
+            key = job_input["key"]
+            if not key.startswith(storage.object_key("outputs/")):  # scope: outputs only
+                return {"success": False, "error": "key must be an output object (under the outputs/ prefix)."}
+            storage.delete(key)
+            return {"success": True, "deleted": key}
 
         return {"success": False, "error": f"Unknown action: {action}"}
     except ValueError as e:  # expected client/validation error — no stack trace
