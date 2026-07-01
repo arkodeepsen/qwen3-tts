@@ -11,14 +11,24 @@ _MODEL = None
 
 
 def get_model():
-    """Load the Base model once per worker; fall back to sdpa if flash-attn is unavailable."""
+    """Load the Base model once per worker.
+
+    Selects flash_attention_2 only if flash-attn is importable, else sdpa. The
+    choice is made up front (cheap import probe) so a cold start never loads the
+    ~5 GB model twice; a final sdpa retry guards any other attn init failure.
+    """
     global _MODEL
     if _MODEL is not None:
         return _MODEL
     from qwen_tts import Qwen3TTSModel
+    try:
+        import flash_attn  # noqa: F401
+        attn = "flash_attention_2"
+    except Exception:
+        attn = "sdpa"
     common = dict(device_map="cuda:0", dtype=torch.bfloat16)
     try:
-        _MODEL = Qwen3TTSModel.from_pretrained(config.MODEL_ID, attn_implementation="flash_attention_2", **common)
+        _MODEL = Qwen3TTSModel.from_pretrained(config.MODEL_ID, attn_implementation=attn, **common)
     except Exception:
         _MODEL = Qwen3TTSModel.from_pretrained(config.MODEL_ID, attn_implementation="sdpa", **common)
     return _MODEL

@@ -13,10 +13,10 @@ RUN python3 -m pip install --upgrade pip
 COPY requirements.txt /app/requirements.txt
 RUN python3 -m pip install -r /app/requirements.txt
 
-# flash-attn is optional; build best-effort, code falls back to sdpa if absent
-RUN MAX_JOBS=4 python3 -m pip install flash-attn --no-build-isolation || \
-    echo "flash-attn unavailable; will use sdpa attention"
-
+# flash-attn is intentionally NOT built — it's heavy/fragile on constrained
+# builders (RunPod Hub) and the code uses PyTorch sdpa attention, which is
+# plenty for this 1.7B model. Re-add a `pip install flash-attn` here if you
+# want it and your build environment can compile it.
 RUN python3 -m pip cache purge || true
 
 # App code (flat modules)

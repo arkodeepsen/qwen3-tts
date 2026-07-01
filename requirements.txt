@@ -1,8 +1,8 @@
 qwen-tts
 transformers==4.57.3
 accelerate==1.12.0
-torch
-torchaudio
+torch==2.8.0
+torchaudio==2.8.0
 librosa
 soundfile
 sox
