@@ -7,9 +7,19 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg sox libsox-dev git && rm -rf /var/lib/apt/lists/*
 
+# Install app deps into a venv that INHERITS the base image's system packages
+# (--system-site-packages), so torch/torchaudio (cu128) stay put with no
+# re-download. New/upgraded deps (e.g. runpod needs cryptography>=48, but the
+# base ships an apt/Debian cryptography with no pip RECORD that pip cannot
+# uninstall) install INTO the venv, shadowing the system copies instead of
+# hard-failing on `uninstall-no-record-file`.
+RUN python3 -m venv --system-site-packages /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
+
 RUN python3 -m pip install --upgrade pip
 
-# App Python deps (transformers/accelerate pinned by qwen-tts)
+# App Python deps (transformers/accelerate pinned by qwen-tts; torch pinned to
+# the base image version so pip treats it as already-satisfied — no re-download)
 COPY requirements.txt /app/requirements.txt
 RUN python3 -m pip install -r /app/requirements.txt
 
