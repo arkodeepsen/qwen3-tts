@@ -2,6 +2,14 @@
 import argparse, base64, os, sys, time
 import requests
 
+# Load ENDPOINT_ID / RUNPOD_API_KEY from the repo-root .env if python-dotenv is
+# installed; otherwise fall back to real environment variables.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+except ImportError:
+    pass
+
 
 def build_register_payload(name, ref_audio_path, ref_text, language):
     with open(ref_audio_path, "rb") as f:

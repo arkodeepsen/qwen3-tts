@@ -9,6 +9,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "client"))
 import requests
 from cli import poll_result
 
+# Load ENDPOINT_ID / RUNPOD_API_KEY from the repo-root .env if python-dotenv is
+# installed; otherwise fall back to real environment variables.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+except ImportError:
+    pass
+
 URL = f"https://api.runpod.ai/v2/{os.environ['ENDPOINT_ID']}/runsync"
 KEY = os.environ["RUNPOD_API_KEY"]
 H = {"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"}
