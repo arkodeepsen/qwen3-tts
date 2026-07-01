@@ -1,0 +1,16 @@
+[runpod]
+name = "qwen3-tts-voice-clone"
+dockerfile = "Dockerfile"
+
+# 16-24GB class GPUs (1.7B model, ~5GB weights)
+gpu_types = ["NVIDIA GeForce RTX 4090", "NVIDIA L4", "NVIDIA RTX A5000", "NVIDIA RTX A4000", "NVIDIA L40S"]
+min_vram_gb = 16
+
+container_disk_gb = 10
+volume_gb = 20              # ~5GB model + voice registry
+
+execution_timeout = 300     # caps runaway/hung jobs
+min_workers = 0             # NO always-on workers -> $0 at rest
+max_workers = 3
+idle_timeout = 5            # billed warm tail after each job; keep low to save $
+flashboot = true            # fast cold starts so a low idle_timeout is cheap

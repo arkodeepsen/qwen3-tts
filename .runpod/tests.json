@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "register_voice",
+      "input": {
+        "action": "register_voice",
+        "name": "smoke_voice",
+        "ref_audio": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav",
+        "ref_text": "Okay. Yeah. I resent you. I love you. I respect you. But you blew it!",
+        "language": "English"
+      }
+    },
+    {
+      "name": "generate",
+      "input": {
+        "action": "generate",
+        "voice_id": "REPLACE_WITH_REGISTERED_ID",
+        "text": "This is a smoke test of the cloned voice.",
+        "language": "English",
+        "response_format": "wav",
+        "return_srt": true
+      }
+    }
+  ],
+  "config": { "gpuTypeId": "NVIDIA L4", "gpuCount": 1, "containerDiskInGb": 10, "volumeInGb": 20 }
+}

@@ -1,0 +1,16 @@
+{
+  "title": "Qwen3-TTS Voice Clone",
+  "description": "Serverless voice cloning with Qwen3-TTS-12Hz-1.7B-Base. Register a voice once, then synthesize arbitrary-length speech (with optional SRT) by voice_id.",
+  "type": "serverless",
+  "category": "audio",
+  "iconUrl": "https://cdn.prod.website-files.com/67d20fb9f56ff2ec6a7a657d/685b40411e38197aff6351df_poddy-3.webp",
+  "config": {
+    "runsOn": "GPU",
+    "containerDiskInGb": 10,
+    "env": [
+      { "key": "HF_HOME", "value": "/runpod-volume" },
+      { "key": "HF_HUB_CACHE", "value": "/runpod-volume" },
+      { "key": "VOICE_DIR", "value": "/runpod-volume/voices" }
+    ]
+  }
+}
