@@ -1,4 +1,3 @@
-import numpy as np
 from actions import handle
 
 class FakeRegistry:

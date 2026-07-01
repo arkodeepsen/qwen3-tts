@@ -16,16 +16,19 @@ def build_generate_payload(voice_id, text, language, response_format, return_srt
                       "return_srt": return_srt, "seed": seed}}
 
 
-def poll_result(base_url, api_key, job):
+def poll_result(base_url, api_key, job, max_wait=600):
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     if job.get("status") in ("IN_QUEUE", "IN_PROGRESS") and job.get("id"):
         status_url = f"{base_url.rsplit('/', 1)[0]}/status/{job['id']}"
+        deadline = time.monotonic() + max_wait
         while True:
             job = requests.get(status_url, headers=headers, timeout=30).json()
             if job.get("status") in ("COMPLETED", "FAILED"):
                 break
+            if time.monotonic() > deadline:
+                return {"success": False, "error": f"Timed out after {max_wait}s polling /status"}
             time.sleep(2)  # /status polling is free — never re-submit to check progress
     return job.get("output", job)
 

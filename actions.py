@@ -1,4 +1,6 @@
 """Route a RunPod job input to a voice-cloning operation and return a JSON envelope."""
+import traceback
+
 import config
 from inference import get_model, synthesize
 from registry import VoiceRegistry
@@ -52,5 +54,8 @@ def handle(job_input: dict, registry: VoiceRegistry = None) -> dict:
                     **({} if ok else {"error": f"Unknown voice_id: {job_input['voice_id']}"})}
 
         return {"success": False, "error": f"Unknown action: {action}"}
-    except Exception as e:  # never let the handler crash — return an envelope
+    except ValueError as e:  # expected client/validation error — no stack trace
+        return {"success": False, "error": str(e)}
+    except Exception as e:  # unexpected: surface a traceback in worker logs, still envelope
+        traceback.print_exc()
         return {"success": False, "error": str(e)}

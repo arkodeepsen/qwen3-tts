@@ -348,9 +348,12 @@ idle, so it costs nothing between requests:
   is **free** — it queries RunPod's control plane and **never wakes a
   worker**. Poll `/status` as often as you like while waiting on a job.
 - **Never health-check via `/run` or `/runsync`.** Doing so bills a worker
-  and defeats scale-to-zero. If you need a liveness/health check, hit the
-  container's `/health` route (or `/ping`) directly rather than invoking
-  the RunPod job endpoint.
+  and defeats scale-to-zero. For liveness, use RunPod's endpoint-level
+  `GET https://api.runpod.ai/v2/<endpoint_id>/health` — it reports queue and
+  worker counts from the control plane and does **not** wake or bill a worker.
+  This service's own handler exposes no HTTP route (it is a RunPod serverless
+  worker), so all interaction is through the `/run`, `/runsync`, and `/status`
+  job API.
 - Because `min_workers=0`, the endpoint bills **$0 while idle** — cost is
   incurred only for the wall-clock duration of active `/run`/`/runsync`
   jobs, plus the short `idle_timeout` warm tail after each job.
