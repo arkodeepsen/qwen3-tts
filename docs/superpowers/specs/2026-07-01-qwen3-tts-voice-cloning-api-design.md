@@ -287,12 +287,18 @@ accidental spend:
 
 ## 10. Risks & verification items
 
-1. **`voice_clone_prompt` serializability** — confirm `torch.save`/`torch.load`
-   round-trips the prompt object across workers/versions. *Mitigation already in
-   design:* `ref.wav` is the source of truth, so `prompt.pt` is best-effort and
-   always rebuildable.
-2. **Python 3.12 base image** — confirm the chosen `runpod/pytorch` tag ships
-   3.12; otherwise provision a 3.12 env via uv/conda.
+1. **`voice_clone_prompt` serializability** — *Resolved by source review.*
+   `create_voice_clone_prompt` returns a `VoiceClonePromptItem` dataclass of
+   plain tensors + primitives. Because `torch.load` defaults to
+   `weights_only=True` (torch ≥2.6) and would reject a pickled dataclass, the
+   implementation serializes a **plain dict** of the fields (tensors + bool/str/
+   None) and reconstructs the dataclass on load, moving tensors to the model
+   device. `ref.wav` remains the source of truth, so `prompt.pt` is best-effort
+   and always rebuildable.
+2. **Python version** — *Corrected by source review.* `qwen-tts` `pyproject.toml`
+   declares `requires-python = ">=3.9"` (3.9–3.13), so the `runpod/pytorch` base
+   image's Python is fine; no special 3.12 env is needed. The real pins to honor
+   are `transformers==4.57.3` and `accelerate==1.12.0`.
 3. **flash-attn build** — heavy and environment-sensitive; kept optional with an
    `sdpa` fallback so the image always builds.
 4. **Sentence segmentation across 10 languages** — a punctuation + length
