@@ -52,13 +52,29 @@ def synthesize(prompt_items, text, language, seed: int = 42, return_srt: bool = 
     if not units:
         raise ValueError("No synthesizable text provided.")
 
+    # Explicit, stability-focused generation params. Without these the Base model
+    # relies on loose defaults (top_p=1.0, no repetition penalty) and can fail to
+    # emit EOS -> runaway audio. max_new_tokens also hard-caps a single chunk.
+    gen_kwargs = dict(
+        do_sample=True,
+        top_k=config.TOP_K,
+        top_p=config.TOP_P,
+        temperature=config.TEMPERATURE,
+        repetition_penalty=config.REPETITION_PENALTY,
+        subtalker_dosample=True,
+        subtalker_top_k=config.TOP_K,
+        subtalker_top_p=config.TOP_P,
+        subtalker_temperature=config.TEMPERATURE,
+        max_new_tokens=config.MAX_NEW_TOKENS,
+    )
+
     wavs, durations, sr = [], [], None
     for unit in units:
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         out_wavs, out_sr = model.generate_voice_clone(
-            text=unit, language=language, voice_clone_prompt=prompt_items)
+            text=unit, language=language, voice_clone_prompt=prompt_items, **gen_kwargs)
         wav = np.asarray(out_wavs[0], dtype=np.float32).reshape(-1)
         sr = int(out_sr)
         wavs.append(wav)

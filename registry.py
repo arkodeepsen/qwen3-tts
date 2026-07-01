@@ -24,6 +24,8 @@ import numpy as np
 import soundfile as sf
 import torch
 
+import config
+
 
 @dataclass
 class PromptItem:
@@ -138,6 +140,13 @@ def _load_audio_np(ref_audio):
     return wav.astype(np.float32), int(sr)
 
 
+def _trim_audio(wav: np.ndarray, sr: int, max_sec: float) -> np.ndarray:
+    """Cap reference-clip length. Overly long reference audio is a known trigger
+    for the model failing to emit EOS and running away during generation."""
+    limit = int(max_sec * sr)
+    return wav[:limit] if limit and wav.shape[0] > limit else wav
+
+
 class VoiceRegistry:
     def __init__(self, root: str, model_getter, cache_size: int = 16):
         self.root = root
@@ -179,6 +188,7 @@ class VoiceRegistry:
         model = self._model_getter()
         voice_id = sanitize_voice_id(name)
         wav, sr = _load_audio_np(ref_audio)
+        wav = _trim_audio(wav, sr, config.REF_AUDIO_MAX_SEC)  # cap ref length -> stable EOS
         # Pass the already-decoded waveform (never the raw string) so the model
         # does not re-fetch a URL or re-read a path.
         items = model.create_voice_clone_prompt(ref_audio=(wav, sr), ref_text=ref_text, x_vector_only_mode=False)

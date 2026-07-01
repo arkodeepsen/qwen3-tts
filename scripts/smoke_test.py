@@ -21,7 +21,7 @@ URL = f"https://api.runpod.ai/v2/{os.environ['ENDPOINT_ID']}/runsync"
 KEY = os.environ["RUNPOD_API_KEY"]
 H = {"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"}
 REF = "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-TTS-Repo/clone.wav"
-REF_TEXT = "Okay. Yeah. I resent you. I love you. I respect you. But you blew it!"
+REF_TEXT = "Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you."
 
 reg = poll_result(URL, KEY, requests.post(URL, headers=H, json={"input": {
     "action": "register_voice", "name": "smoke", "ref_audio": REF,

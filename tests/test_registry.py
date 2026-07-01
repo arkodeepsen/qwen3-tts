@@ -98,3 +98,12 @@ def test_register_rejects_local_path(reg):
     r, _ = reg
     with pytest.raises(ValueError):
         r.register("v", "/etc/passwd", "ref transcript", "English")
+
+def test_register_trims_long_ref_audio(reg):
+    r, _ = reg
+    import io, os, base64, soundfile as sf
+    long_wav = np.zeros(40 * 24000, dtype=np.float32)  # 40s -> must be trimmed to <= 30s
+    buf = io.BytesIO(); sf.write(buf, long_wav, 24000, format="WAV")
+    out = r.register("longref", base64.b64encode(buf.getvalue()).decode(), "ref transcript", "English")
+    saved, sr = sf.read(os.path.join(r.root, out["voice_id"], "ref.wav"), dtype="float32")
+    assert len(saved) / sr <= 30.0 + 0.05

@@ -9,10 +9,11 @@ class FakeModel:
     Records a fresh global-RNG draw per call so a test can *prove* the seed is
     reset before EVERY chunk: identical draws => reset each chunk; diverging
     draws => seeded only once (RNG advances between chunks)."""
-    def __init__(self): self.calls = []; self.draws = []
+    def __init__(self): self.calls = []; self.draws = []; self.last_kwargs = {}
     def generate_voice_clone(self, text, language, voice_clone_prompt, **kw):
         import torch
         self.calls.append(text)
+        self.last_kwargs = kw
         self.draws.append(torch.rand(1).item())  # first draw after synthesize's manual_seed
         n = 100  # 100 samples @ sr=100 => 1.0s
         return [np.full(n, 0.2, dtype=np.float32)], 100
@@ -51,3 +52,14 @@ def test_seed_is_applied_each_chunk():
     # as the RNG advances. This structurally proves per-chunk reset.
     assert len(m.draws) == 3
     assert len(set(m.draws)) == 1
+
+def test_stability_params_forwarded():
+    import config
+    m = FakeModel()
+    synthesize(_prompt(), "Hello.", "English", model=m)
+    kw = m.last_kwargs
+    assert kw["do_sample"] is True
+    assert kw["repetition_penalty"] == config.REPETITION_PENALTY
+    assert kw["top_p"] == config.TOP_P
+    assert kw["temperature"] == config.TEMPERATURE
+    assert kw["max_new_tokens"] == config.MAX_NEW_TOKENS
