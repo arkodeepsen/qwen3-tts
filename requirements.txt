@@ -8,4 +8,5 @@ soundfile
 sox
 onnxruntime
 einops
+hf-transfer
 runpod>=1.0.0
