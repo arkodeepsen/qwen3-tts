@@ -4,12 +4,16 @@ import soundfile as sf
 from inference import synthesize
 
 class FakeModel:
-    """Returns 1 sample-second of audio per call so durations are deterministic."""
-    def __init__(self): self.calls = []; self.seeds = []
+    """Returns 1 sample-second of audio per call so durations are deterministic.
+
+    Records a fresh global-RNG draw per call so a test can *prove* the seed is
+    reset before EVERY chunk: identical draws => reset each chunk; diverging
+    draws => seeded only once (RNG advances between chunks)."""
+    def __init__(self): self.calls = []; self.draws = []
     def generate_voice_clone(self, text, language, voice_clone_prompt, **kw):
         import torch
         self.calls.append(text)
-        self.seeds.append(torch.initial_seed())
+        self.draws.append(torch.rand(1).item())  # first draw after synthesize's manual_seed
         n = 100  # 100 samples @ sr=100 => 1.0s
         return [np.full(n, 0.2, dtype=np.float32)], 100
 
@@ -41,5 +45,9 @@ def test_srt_is_sentence_level():
 
 def test_seed_is_applied_each_chunk():
     m = FakeModel()
-    synthesize(_prompt(), "One. Two.", "English", seed=123, return_srt=True, model=m)
-    assert set(m.seeds) == {123}        # same fixed seed reset before each chunk
+    synthesize(_prompt(), "One. Two. Three.", "English", seed=123, return_srt=True, model=m)
+    # Each chunk draws from the global RNG right after synthesize resets the seed.
+    # Reset-before-every-chunk => all draws identical; seeded-once => draws diverge
+    # as the RNG advances. This structurally proves per-chunk reset.
+    assert len(m.draws) == 3
+    assert len(set(m.draws)) == 1

@@ -102,10 +102,10 @@ def _load_audio_np(ref_audio):
     """
     if isinstance(ref_audio, tuple):
         wav, sr = ref_audio
-        wav = np.asarray(wav, dtype=np.float32).reshape(-1)
-        if wav.ndim > 1:
-            wav = np.mean(wav, axis=-1).astype(np.float32)
-        return wav.astype(np.float32), int(sr)
+        wav = np.asarray(wav, dtype=np.float32)
+        if wav.ndim > 1:  # average channels BEFORE flattening (don't interleave)
+            wav = np.mean(wav, axis=-1)
+        return wav.reshape(-1).astype(np.float32), int(sr)
     if not isinstance(ref_audio, str):
         raise ValueError("ref_audio must be a base64 string, https URL, or (waveform, sr) tuple.")
 

@@ -53,7 +53,6 @@ def test_load_prompt_rebuilds_when_cache_file_missing(reg, tmp_path):
     r, model = reg
     out = r.register("v", _wav_b64(), "ref transcript", "English")
     # delete prompt.pt, clear in-process cache -> must rebuild from ref.wav
-    (tmp_path / "voices" if False else None)
     import os
     os.remove(os.path.join(r.root, out["voice_id"], "prompt.pt"))
     r._cache.clear()
