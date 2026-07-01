@@ -1,0 +1,11 @@
+qwen-tts
+transformers==4.57.3
+accelerate==1.12.0
+torch
+torchaudio
+librosa
+soundfile
+sox
+onnxruntime
+einops
+runpod>=1.0.0
