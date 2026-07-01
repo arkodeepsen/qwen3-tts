@@ -24,12 +24,17 @@ def _get_client():
     global _client
     if _client is None:
         import boto3  # lazy import: only needed when storage is actually used
+        from botocore.config import Config
+        # Path-style + s3v4 is required by S3-compatible gateways (RunPod S3,
+        # R2, MinIO) — the default virtual-host addressing needs per-bucket DNS
+        # and triggers SignatureDoesNotMatch on custom endpoints.
         _client = boto3.client(
             "s3",
             endpoint_url=config.S3_ENDPOINT_URL or None,
             aws_access_key_id=config.S3_ACCESS_KEY_ID,
             aws_secret_access_key=config.S3_SECRET_ACCESS_KEY,
             region_name=config.S3_REGION or None,
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
     return _client
 
