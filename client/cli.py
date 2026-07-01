@@ -38,6 +38,12 @@ def poll_result(base_url, api_key, job, max_wait=600):
             if time.monotonic() > deadline:
                 return {"success": False, "error": f"Timed out after {max_wait}s polling /status"}
             time.sleep(2)  # /status polling is free — never re-submit to check progress
+    # RunPod flags any output containing an "error" key as FAILED and hoists the
+    # message to the top level, leaving output = {"success": false}. Merge it back
+    # so callers still see the reason.
+    if job.get("status") == "FAILED" and job.get("error"):
+        base = job["output"] if isinstance(job.get("output"), dict) else {}
+        return {"success": False, **base, "error": job["error"]}
     return job.get("output", job)
 
 

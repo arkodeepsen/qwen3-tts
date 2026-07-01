@@ -116,6 +116,17 @@ def test_output_url_without_s3_errors(monkeypatch):
 
 def test_output_auto_no_s3_falls_back_to_base64(monkeypatch):
     monkeypatch.setattr(config, "S3_BUCKET", "")
-    monkeypatch.setattr(config, "MAX_INLINE_BYTES", 10)  # would be "large"
+    monkeypatch.setattr(config, "MAX_INLINE_BYTES", 10)  # auto would prefer url...
     out = synthesize([object()], "Hello.", "English", output="auto", model=_FakeModel())
-    assert "audio_base64" in out and "url" not in out
+    assert "audio_base64" in out and "url" not in out    # ...but no S3 and it fits -> base64
+
+def test_output_base64_too_large_upgrades_to_url(s3, monkeypatch):
+    monkeypatch.setattr(config, "MAX_BASE64_BYTES", 10)  # tiny cap -> result is "too big"
+    out = synthesize([object()], "Hello.", "English", output="base64", model=_FakeModel())
+    assert "url" in out and "audio_base64" not in out    # forced base64 upgraded to URL (S3 on)
+
+def test_output_base64_too_large_no_s3_errors(monkeypatch):
+    monkeypatch.setattr(config, "S3_BUCKET", "")
+    monkeypatch.setattr(config, "MAX_BASE64_BYTES", 10)
+    with pytest.raises(ValueError):
+        synthesize([object()], "Hello.", "English", output="base64", model=_FakeModel())

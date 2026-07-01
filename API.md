@@ -242,6 +242,7 @@ Environment Variables):
 | `S3_URL_EXPIRY` | no | `604800` (7 days) | Lifetime in seconds of presigned URLs (ignored when `S3_PUBLIC_BASE_URL` is set). |
 | `S3_PREFIX` | no | `qwen3-tts` | Key prefix every auto-generated/namespaced object is stored under. |
 | `MAX_INLINE_BYTES` | no | `5242880` (5 MB) | `output: "auto"` threshold: encoded audio at or below this size comes back inline as base64; above it, it's uploaded and a `url` is returned. |
+| `MAX_BASE64_BYTES` | no | `8388608` (8 MB) | Hard cap for inline base64 (RunPod rejects oversized responses). A result larger than this is uploaded and returned as a `url` when S3 is configured (even for `output: "base64"`), otherwise the request errors instead of failing silently. Tune to your endpoint's response limit. |
 | `OUTPUT_TTL_SEC` | no | `86400` (24 h) | Age at which objects under `outputs/` are auto-pruned on every upload (see warning below). `0` disables auto-pruning. |
 
 Storage is considered "configured"/enabled once `S3_BUCKET`,

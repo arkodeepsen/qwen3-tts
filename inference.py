@@ -101,14 +101,29 @@ def synthesize(prompt_items, text, language, seed: int = 42, return_srt: bool = 
         "srt": srt_str,
         "segments": segments,
     }
-    # output: "url" always uploads; "base64" always inlines; "auto" (default)
-    # inlines small results and uploads large ones (base64 over the response
-    # limit would fail). Auto silently falls back to base64 if S3 isn't set up.
-    want_url = (output == "url") or (output == "auto" and len(data) > config.MAX_INLINE_BYTES)
+    # Decide base64 vs URL. "url" always uploads; "base64" inlines but upgrades
+    # to a URL if the result is too large for a serverless response; "auto"
+    # inlines small results and uploads large ones. If a URL is needed but S3
+    # isn't configured, fall back to base64 when it still fits, else error —
+    # never silently return an oversized base64 that RunPod would reject.
+    size = len(data)
+    too_big_for_base64 = size > config.MAX_BASE64_BYTES
+    if output == "base64" and not too_big_for_base64:
+        want_url = False
+    elif output == "url" or too_big_for_base64:
+        want_url = True
+    else:  # auto
+        want_url = size > config.MAX_INLINE_BYTES
+
     if want_url and not storage.enabled():
+        if too_big_for_base64:
+            raise ValueError(
+                f"Audio is {size} bytes — too large to return as base64 and no S3 storage is "
+                f"configured. Set the S3_* env vars (output='url'/'auto'), or shorten the text.")
         if output == "url":
             raise ValueError("output='url' requires S3 storage (set the S3_* env vars).")
-        want_url = False  # auto + no storage -> return base64
+        want_url = False  # auto wanted a URL but it fits base64 and there's no S3
+
     if want_url:
         import uuid
         key = storage.object_key(s3_key or f"outputs/{uuid.uuid4().hex}.{fmt}")

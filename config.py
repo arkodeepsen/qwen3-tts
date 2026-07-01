@@ -37,10 +37,15 @@ S3_PUBLIC_BASE_URL = os.getenv("S3_PUBLIC_BASE_URL", "")    # set if the bucket 
 S3_URL_EXPIRY = int(os.getenv("S3_URL_EXPIRY", "604800"))  # presigned URL lifetime in seconds (default 7 days)
 S3_PREFIX = os.getenv("S3_PREFIX", "qwen3-tts")            # key prefix for all objects
 
-# `generate` with output="auto" returns base64 when the encoded audio is at or
-# below this size, else uploads to S3 and returns a URL (base64 over ~this size
-# risks exceeding the serverless response limit).
+# output="auto" returns base64 at/below this size, else a URL (keeps responses
+# small/fast).
 MAX_INLINE_BYTES = int(os.getenv("MAX_INLINE_BYTES", str(5 * 1024 * 1024)))  # 5 MB
+
+# Hard cap on base64 output: audio larger than this cannot be returned inline
+# (RunPod rejects oversized responses). Above it we upgrade to a URL when S3 is
+# configured, else error — never a silent job failure. Tune to your endpoint's
+# actual response limit.
+MAX_BASE64_BYTES = int(os.getenv("MAX_BASE64_BYTES", str(8 * 1024 * 1024)))  # 8 MB
 
 # Outputs older than this are pruned from the bucket on each upload — the RunPod
 # network-volume bucket is shared with the model cache + voices, so stale output
